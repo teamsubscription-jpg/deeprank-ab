@@ -3,17 +3,24 @@
 # RunPod's GitHub build integration). For the plain CLI images see
 # Dockerfile.cpu / Dockerfile.gpu.
 #
+# Kept small so RunPod's builder doesn't time out:
+#  - plain ubuntu base: the PyPI torch wheel already bundles CUDA/cuDNN, and
+#    the NVIDIA driver is injected by the container runtime
+#  - no uv cache in the layers
+#  - ESM-2 weights (~2.5GB) are downloaded on first use, to the network
+#    volume when one is attached (see serverless/handler.py)
+#
 # Build:  docker build -t deeprank-ab-serverless .
 # Local test:
 #   docker run --rm --gpus all deeprank-ab-serverless \
 #     /opt/handler-venv/bin/python -u /app/serverless/handler.py \
 #     --test_input "$(cat serverless/test_input.json)"
 #==========================================================================#
-ARG CUDA=12.8.0
-FROM nvidia/cuda:${CUDA}-cudnn-runtime-ubuntu22.04
+FROM ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    UV_NO_CACHE=1
 
 RUN apt-get update && \
   apt-get install -y --no-install-recommends build-essential ca-certificates && \
@@ -38,9 +45,5 @@ RUN uv venv --python 3.10 && uv pip install .
 # with deeprank-ab's requests==2.29.0 pin. It only shells out to the CLI.
 RUN uv venv --python 3.10 /opt/handler-venv && \
   uv pip install --python /opt/handler-venv/bin/python -r serverless/requirements.txt
-
-# Bake the ~2.5GB ESM-2 weights into the image so workers don't download
-# them on every cold start (checksums are verified by fetch_weights)
-RUN /app/.venv/bin/python -c "from scripts.inference import fetch_weights; fetch_weights()"
 
 CMD ["/opt/handler-venv/bin/python", "-u", "/app/serverless/handler.py"]

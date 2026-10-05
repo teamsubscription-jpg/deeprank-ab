@@ -34,6 +34,18 @@ MAX_DOWNLOAD_BYTES = int(
 )
 CHAIN_OPTIONS = ("heavy_chain_id", "light_chain_id", "antigen_chain_id")
 
+# ESM-2 weights are fetched by the CLI on first use. With a network volume
+# attached they persist across workers; otherwise each new worker downloads
+# them once into /cache.
+VOLUME_DIR = Path("/runpod-volume")
+if VOLUME_DIR.is_dir():
+    _cache = VOLUME_DIR / "deeprank-ab-cache"
+    _cache.mkdir(parents=True, exist_ok=True)
+    os.environ["WEIGHT_PATH"] = str(_cache / "esm2_t33_650M_UR50D.pt")
+    os.environ["REG_WEIGHT_PATH"] = str(
+        _cache / "esm2_t33_650M_UR50D-contact-regression.pt"
+    )
+
 
 def _get_pdb_bytes(job_input):
     given = [k for k in ("pdb", "pdb_base64", "pdb_url") if job_input.get(k)]
