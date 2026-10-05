@@ -6,7 +6,7 @@
 # Build:  docker build -t deeprank-ab-serverless .
 # Local test:
 #   docker run --rm --gpus all deeprank-ab-serverless \
-#     /app/.venv/bin/python -u /app/serverless/handler.py \
+#     /opt/handler-venv/bin/python -u /app/serverless/handler.py \
 #     --test_input "$(cat serverless/test_input.json)"
 #==========================================================================#
 ARG CUDA=12.8.0
@@ -32,11 +32,15 @@ WORKDIR /app
 COPY . .
 RUN chmod +x src/tools/ANARCI/hmmscan src/tools/voronota/voronota
 
-RUN uv venv --python 3.10 && \
-  uv pip install . -r serverless/requirements.txt
+RUN uv venv --python 3.10 && uv pip install .
+
+# The handler gets its own venv: runpod needs requests>=2.31, which conflicts
+# with deeprank-ab's requests==2.29.0 pin. It only shells out to the CLI.
+RUN uv venv --python 3.10 /opt/handler-venv && \
+  uv pip install --python /opt/handler-venv/bin/python -r serverless/requirements.txt
 
 # Bake the ~2.5GB ESM-2 weights into the image so workers don't download
 # them on every cold start (checksums are verified by fetch_weights)
 RUN /app/.venv/bin/python -c "from scripts.inference import fetch_weights; fetch_weights()"
 
-CMD ["/app/.venv/bin/python", "-u", "/app/serverless/handler.py"]
+CMD ["/opt/handler-venv/bin/python", "-u", "/app/serverless/handler.py"]

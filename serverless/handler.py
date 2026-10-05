@@ -1,6 +1,8 @@
 """RunPod serverless handler for DeepRank-Ab.
 
-Wraps the installed `deeprank-ab-predict` command line tool.
+Wraps the installed `deeprank-ab-predict` command line tool. Runs in its own
+venv (runpod's requests>=2.31 conflicts with deeprank-ab's pins), so it only
+uses the standard library plus runpod.
 
 Job input (``job["input"]``), give ONE of:
     "pdb":        PDB file contents as plain text (single model or ensemble)
@@ -16,13 +18,13 @@ Returns ``{"predictions": [...]}``, one row per model of the predictions CSV
 """
 
 import base64
+import csv
 import os
 import subprocess
 import tempfile
 import urllib.request
 from pathlib import Path
 
-import pandas as pd
 import runpod
 
 PREDICT_BIN = "/app/.venv/bin/deeprank-ab-predict"
@@ -79,11 +81,15 @@ def handler(job):
                     "stdout": proc.stdout[-4000:],
                 }
 
-            df = pd.read_csv(csvs[0])
+            with open(csvs[0], newline="") as fh:
+                rows = list(csv.DictReader(fh))
     except (ValueError, OSError, subprocess.TimeoutExpired) as exc:
         return {"error": str(exc)}
 
-    return {"predictions": df.where(df.notna(), None).to_dict(orient="records")}
+    for row in rows:
+        if row.get("predicted_dockq"):
+            row["predicted_dockq"] = float(row["predicted_dockq"])
+    return {"predictions": rows}
 
 
 if __name__ == "__main__":
